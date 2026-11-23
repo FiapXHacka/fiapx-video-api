@@ -36,6 +36,6 @@ internal static class HealthEndpoints
             status = report.Status.ToString(),
             checks = report.Entries.ToDictionary(e => e.Key, e => e.Value.Status.ToString()),
         };
-        return context.Response.WriteAsync(JsonSerializer.Serialize(body, JsonSerializerOptions.Web));
+        return context.Response.WriteAsync(JsonSerializer.Serialize(body, JsonSerializerOptions.Web), context.RequestAborted);
     }
 }
