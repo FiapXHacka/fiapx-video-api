@@ -51,24 +51,19 @@ jobs:
           /o:"${{ steps.sonar.outputs.organization }}"
           /d:sonar.host.url="https://sonarcloud.io"
           /d:sonar.token="${SONAR_TOKEN}"
-          /d:sonar.cs.vscoveragexml.reportsPaths="**/TestResults/*.coverage.xml"
+          /d:sonar.cs.opencover.reportsPaths="**/TestResults/**/coverage.opencover.xml"
           /d:sonar.coverage.exclusions="**/Program.cs,**/Migrations/**,**/DesignTime*.cs"
           /d:sonar.cpd.exclusions="**/Migrations/**"
 
       - name: Build
         run: dotnet build FiapX.VideoApi.slnx -c Release --no-incremental
 
-      # Microsoft.Testing.Platform runner (global.json); coverage in VS XML format, read by Sonar.
-      # One command per project so each one writes its own coverage file.
-      - name: Unit tests
+      - name: Test (unit + integration with Testcontainers)
         run: >
-          dotnet test --project tests/FiapX.VideoApi.UnitTests -c Release --no-build
-          --coverage --coverage-output-format xml --coverage-output unit.coverage.xml
-
-      - name: Integration tests (Testcontainers)
-        run: >
-          dotnet test --project tests/FiapX.VideoApi.IntegrationTests -c Release --no-build
-          --coverage --coverage-output-format xml --coverage-output integration.coverage.xml
+          dotnet test FiapX.VideoApi.slnx -c Release --no-build
+          --settings coverlet.runsettings
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
 
       - name: Sonar end
         run: dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"

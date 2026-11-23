@@ -9,4 +9,11 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('Tests'))">
+    <IsPackable>false</IsPackable>
+    <!-- xunit.v3 enables Microsoft.Testing.Platform, which dotnet test on SDK 10 rejects in VSTest mode.
+         Run through VSTest so the coverlet collector produces OpenCover for Sonar (same as identity-service). -->
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+  </PropertyGroup>
 </Project>

@@ -71,6 +71,9 @@ public sealed class MessagingTests(PlatformFixture fixture)
     [Fact]
     public async Task Events_without_handler_and_malformed_messages_are_acked()
     {
+        // Other tests (the poison one) may already have dead-lettered messages: compare with the baseline.
+        var deadLettersBefore = await QueueDepthAsync(RabbitMqTopology.StatusDeadLetterQueue);
+
         var started = JsonSerializer.SerializeToUtf8Bytes(new
         {
             specversion = "1.0",
@@ -84,7 +87,7 @@ public sealed class MessagingTests(PlatformFixture fixture)
         await PublishAsync(EventTypes.VideoProcessed, Encoding.UTF8.GetBytes("{ not json"));
 
         await Eventually.ReturnsAsync(() => QueueDepthAsync(RabbitMqTopology.StatusQueue), depth => depth == 0);
-        (await QueueDepthAsync(RabbitMqTopology.StatusDeadLetterQueue)).ShouldBe(0u);
+        (await QueueDepthAsync(RabbitMqTopology.StatusDeadLetterQueue)).ShouldBe(deadLettersBefore);
     }
 
     [Fact]
