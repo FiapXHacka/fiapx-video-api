@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\FiapX.VideoApi.Domain\FiapX.VideoApi.Domain.csproj" />
+  </ItemGroup>
+</Project>
