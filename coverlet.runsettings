@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Coverage for SonarQube Cloud (OpenCover). Used by dotnet test with the XPlat Code Coverage collector. -->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>opencover</Format>
+          <Include>[FiapX.VideoApi.*]*</Include>
+          <Exclude>[FiapX.VideoApi.*Tests]*</Exclude>
+          <ExcludeByFile>**/Migrations/*.cs,**/Program.cs</ExcludeByFile>
+          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

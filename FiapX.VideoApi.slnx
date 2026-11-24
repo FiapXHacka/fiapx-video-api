@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FiapX.VideoApi.Domain/FiapX.VideoApi.Domain.csproj" />
+    <Project Path="src/FiapX.VideoApi.Application/FiapX.VideoApi.Application.csproj" />
+    <Project Path="src/FiapX.VideoApi.Infrastructure/FiapX.VideoApi.Infrastructure.csproj" />
+    <Project Path="src/FiapX.VideoApi.Api/FiapX.VideoApi.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FiapX.VideoApi.UnitTests/FiapX.VideoApi.UnitTests.csproj" />
+    <Project Path="tests/FiapX.VideoApi.IntegrationTests/FiapX.VideoApi.IntegrationTests.csproj" />
+  </Folder>
+</Solution>
