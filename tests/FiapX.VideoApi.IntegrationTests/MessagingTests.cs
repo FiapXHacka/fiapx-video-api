@@ -58,13 +58,12 @@ public sealed class MessagingTests(PlatformFixture fixture)
         var messageId = Guid.CreateVersion7();
         var body = ProcessedEvent(messageId, videoId);
 
-        await PublishAsync(EventTypes.VideoProcessed, body);
-        await Eventually.ReturnsAsync(() => Task.FromResult(Handled(videoId)), count => count == 1);
+        // Copies of the same message arrive together and are handled in parallel (ConsumerConcurrency = 4).
+        await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => PublishAsync(EventTypes.VideoProcessed, body)));
 
-        // Redelivery of the same message (same CloudEvent id) must not reach the handler again.
-        await PublishAsync(EventTypes.VideoProcessed, body);
         await Eventually.ReturnsAsync(() => InboxCountAsync(messageId), count => count == 1);
         await Eventually.ReturnsAsync(() => QueueDepthAsync(RabbitMqTopology.StatusQueue), depth => depth == 0);
+        await Task.Delay(TimeSpan.FromSeconds(1), Ct);
         Handled(videoId).ShouldBe(1);
     }
 

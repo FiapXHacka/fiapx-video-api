@@ -51,7 +51,7 @@ tests/FiapX.VideoApi.IntegrationTests   Testcontainers: PostgreSQL 17 + RabbitMQ
 | Situação | Ação |
 |---|---|
 | Consumer executou (efeito e inbox gravados) | `BasicAck` |
-| Mensagem já presente na inbox (duplicada) | `BasicAck` |
+| Mensagem já presente na inbox (duplicada) | `BasicAck`. A linha da inbox é reservada com `INSERT … ON CONFLICT DO NOTHING` **antes** do consumer rodar, então cópias processadas em paralelo esperam umas pelas outras e o consumer executa uma única vez |
 | `type` não tratado aqui, ou envelope sem `id`/`type` | `BasicAck` + log de aviso |
 | `type` conhecido com `data` inválido | `BasicReject(requeue: false)` → DLQ, sem novas tentativas |
 | Consumer lançou exceção | até `RabbitMq:MaxHandlerAttempts` (3) tentativas no processo, com backoff exponencial e jitter a partir de `RabbitMq:HandlerRetryDelay` (200 ms), cada uma em escopo e transação novos; depois `BasicReject(requeue: false)` → DLQ |

@@ -93,9 +93,14 @@ internal sealed partial class MessageDispatcher
         var db = scope.ServiceProvider.GetRequiredService<VideoDbContext>();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        var alreadyHandled = await db.InboxMessages.AnyAsync(
-            m => m.MessageId == envelope.Id && m.Consumer == ConsumerName, cancellationToken);
-        if (alreadyHandled)
+        // Claim the inbox row before running the consumer. A concurrent copy of the same message blocks on the
+        // unique key until this transaction ends: after a commit it inserts nothing (duplicate), after a rollback
+        // it takes over. So the consumer runs once even with ConsumerConcurrency > 1.
+        var processedAt = _timeProvider.GetUtcNow();
+        var claimed = await db.Database.ExecuteSqlAsync(
+            $"INSERT INTO inbox_messages (message_id, consumer, processed_at) VALUES ({envelope.Id}, {ConsumerName}, {processedAt}) ON CONFLICT (message_id, consumer) DO NOTHING",
+            cancellationToken);
+        if (claimed == 0)
         {
             LogDuplicate(envelope.Id, envelope.Type);
             activity?.SetTag("messaging.duplicate", true);
@@ -103,7 +108,6 @@ internal sealed partial class MessageDispatcher
         }
 
         await registration.Invoke(scope.ServiceProvider, envelope, data, cancellationToken);
-        db.InboxMessages.Add(new InboxMessage(envelope.Id, ConsumerName, _timeProvider.GetUtcNow()));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         activity?.SetStatus(ActivityStatusCode.Ok);
