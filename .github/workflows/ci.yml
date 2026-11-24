@@ -58,6 +58,17 @@ jobs:
       - name: Build
         run: dotnet build FiapX.VideoApi.slnx -c Release --no-incremental
 
+      # EF Core migrations are the source of truth for the schema (alignment spec §4, ADR-0009):
+      # fail if the model has changes without a migration or if db/schema.sql is stale.
+      - name: Check migrations and db/schema.sql
+        run: |
+          dotnet tool restore
+          dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
+            -p src/FiapX.VideoApi.Infrastructure -s src/FiapX.VideoApi.Infrastructure
+          dotnet ef migrations script --idempotent --no-build --configuration Release \
+            -p src/FiapX.VideoApi.Infrastructure -s src/FiapX.VideoApi.Infrastructure -o db/schema.sql
+          git diff --exit-code db/schema.sql
+
       - name: Test (unit + integration with Testcontainers)
         run: >
           dotnet test FiapX.VideoApi.slnx -c Release --no-build

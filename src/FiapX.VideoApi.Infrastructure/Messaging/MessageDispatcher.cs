@@ -7,13 +7,31 @@ using Microsoft.Extensions.Logging;
 
 namespace FiapX.VideoApi.Infrastructure.Messaging;
 
+/// <summary>What the consumer must do with a delivery (alignment spec §1 / ADR-0007).</summary>
+internal enum DispatchOutcome
+{
+    /// <summary>Handled: the effect and the inbox row were committed. Ack.</summary>
+    Handled,
+
+    /// <summary>Already in the inbox for this consumer. Ack.</summary>
+    Duplicate,
+
+    /// <summary>Type not handled here, or envelope without id/type (tolerant reader). Ack.</summary>
+    Ignored,
+
+    /// <summary>Known type with invalid data: permanent. Reject without requeue (DLQ).</summary>
+    Rejected,
+}
+
 /// <summary>
-/// Turns a raw message into a handler call with inbox deduplication (ADR-0007).
-/// Returning normally means "ack"; throwing means the consumer retries and finally dead-letters the message.
-/// Messages that can never succeed (malformed, unknown type) are acked.
+/// Turns a raw message into a consumer call, inside a fresh DI scope and transaction, with inbox deduplication.
+/// Exceptions thrown by the consumer propagate: the RabbitMQ consumer retries and finally rejects the message.
 /// </summary>
 internal sealed partial class MessageDispatcher
 {
+    /// <summary>Inbox consumer name: one row per message per queue.</summary>
+    public const string ConsumerName = RabbitMqTopology.StatusQueue;
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<MessageDispatcher> _logger;
@@ -31,12 +49,9 @@ internal sealed partial class MessageDispatcher
         _registrations = registrations.ToDictionary(r => r.EventType, StringComparer.Ordinal);
     }
 
-    /// <summary>Inbox consumer name: one row per message per queue.</summary>
-    public const string ConsumerName = RabbitMqTopology.StatusQueue;
-
     public bool HasHandlers => _registrations.Count > 0;
 
-    public async Task DispatchAsync(ReadOnlyMemory<byte> body, CancellationToken cancellationToken)
+    public async Task<DispatchOutcome> DispatchAsync(ReadOnlyMemory<byte> body, CancellationToken cancellationToken)
     {
         CloudEvent<JsonElement>? envelope;
         try
@@ -45,20 +60,31 @@ internal sealed partial class MessageDispatcher
         }
         catch (JsonException ex)
         {
-            LogMalformed(ex.Message);
-            return;
+            LogMalformedEnvelope(ex.Message);
+            return DispatchOutcome.Ignored;
         }
 
         if (envelope is null || envelope.Id == Guid.Empty || string.IsNullOrWhiteSpace(envelope.Type))
         {
-            LogMalformed("missing id or type");
-            return;
+            LogMalformedEnvelope("missing id or type");
+            return DispatchOutcome.Ignored;
         }
 
         if (!_registrations.TryGetValue(envelope.Type, out var registration))
         {
             LogUnknownType(envelope.Type, envelope.Id);
-            return;
+            return DispatchOutcome.Ignored;
+        }
+
+        object data;
+        try
+        {
+            data = registration.Deserialize(envelope.Data);
+        }
+        catch (InvalidEventDataException ex)
+        {
+            LogInvalidData(ex, envelope.Id, envelope.Type);
+            return DispatchOutcome.Rejected;
         }
 
         using var activity = MessagingTelemetry.StartConsume(envelope);
@@ -73,21 +99,25 @@ internal sealed partial class MessageDispatcher
         {
             LogDuplicate(envelope.Id, envelope.Type);
             activity?.SetTag("messaging.duplicate", true);
-            return;
+            return DispatchOutcome.Duplicate;
         }
 
-        await registration.Invoke(scope.ServiceProvider, envelope, cancellationToken);
+        await registration.Invoke(scope.ServiceProvider, envelope, data, cancellationToken);
         db.InboxMessages.Add(new InboxMessage(envelope.Id, ConsumerName, _timeProvider.GetUtcNow()));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         activity?.SetStatus(ActivityStatusCode.Ok);
+        return DispatchOutcome.Handled;
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Discarding malformed message: {Reason}")]
-    private partial void LogMalformed(string reason);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Acking message without a valid envelope: {Reason}")]
+    private partial void LogMalformedEnvelope(string reason);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Discarding message {MessageId} with unknown type {Type}")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Acking message {MessageId} with type {Type}, not handled by this service")]
     private partial void LogUnknownType(string type, Guid messageId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Rejecting message {MessageId} ({Type}) to the DLQ: invalid data")]
+    private partial void LogInvalidData(Exception exception, Guid messageId, string type);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Message {MessageId} ({Type}) already handled, skipping")]
     private partial void LogDuplicate(Guid messageId, string type);

@@ -27,6 +27,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapVideoApiHealthChecks();
+app.MapMe();
 
 if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
 {

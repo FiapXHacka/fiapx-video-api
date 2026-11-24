@@ -29,6 +29,8 @@ public static class DependencyInjection
         services.AddOptions<RabbitMqOptions>()
             .Bind(configuration.GetSection(RabbitMqOptions.SectionName))
             .Validate(o => System.Uri.TryCreate(o.Uri, UriKind.Absolute, out _), "RabbitMq:Uri must be an absolute amqp:// URI.")
+            .Validate(o => !string.IsNullOrWhiteSpace(o.ClientName) && !string.IsNullOrWhiteSpace(o.Exchange) && !string.IsNullOrWhiteSpace(o.DeadLetterExchange), "RabbitMq:ClientName, Exchange and DeadLetterExchange are required.")
+            .Validate(o => o.PrefetchCount > 0 && o.ConsumerConcurrency > 0 && o.MaxHandlerAttempts > 0 && o.HandlerRetryDelay >= TimeSpan.Zero, "RabbitMq:PrefetchCount, ConsumerConcurrency and MaxHandlerAttempts must be positive.")
             .ValidateOnStart();
         services.AddOptions<OutboxOptions>()
             .Bind(configuration.GetSection(OutboxOptions.SectionName))

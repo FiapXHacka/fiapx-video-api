@@ -69,7 +69,7 @@ public sealed class MessagingTests(PlatformFixture fixture)
     }
 
     [Fact]
-    public async Task Events_without_handler_and_malformed_messages_are_acked()
+    public async Task Unknown_types_and_envelopes_without_id_are_acked_and_not_dead_lettered()
     {
         // Other tests (the poison one) may already have dead-lettered messages: compare with the baseline.
         var deadLettersBefore = await QueueDepthAsync(RabbitMqTopology.StatusDeadLetterQueue);
@@ -91,16 +91,45 @@ public sealed class MessagingTests(PlatformFixture fixture)
     }
 
     [Fact]
-    public async Task Handler_failures_are_retried_in_process_and_then_dead_lettered()
+    public async Task Failing_consumer_is_retried_MaxHandlerAttempts_times_then_rejected_to_the_dlq_without_looping()
     {
         var messageId = Guid.CreateVersion7();
+        var deadLettersBefore = await QueueDepthAsync(RabbitMqTopology.StatusDeadLetterQueue);
+        var attemptsBefore = fixture.PoisonAttempts;
 
         await PublishAsync(EventTypes.VideoProcessed, ProcessedEvent(messageId, PlatformFixture.PoisonVideoId));
 
         await Eventually.ReturnsAsync(
-            () => QueueDepthAsync(RabbitMqTopology.StatusDeadLetterQueue), depth => depth >= 1, TimeSpan.FromSeconds(60));
-        (await InboxCountAsync(messageId)).ShouldBe(0, "a failed handler must roll back its transaction");
-        fixture.PoisonAttempts.ShouldBe(3, "MaxHandlerAttempts, then nack without requeue (no redelivery loop)");
+            () => QueueDepthAsync(RabbitMqTopology.StatusDeadLetterQueue), depth => depth == deadLettersBefore + 1, TimeSpan.FromSeconds(30));
+        (fixture.PoisonAttempts - attemptsBefore).ShouldBe(3, "RabbitMq:MaxHandlerAttempts");
+
+        // No redelivery loop: after the reject, the consumer never sees the message again.
+        await Task.Delay(TimeSpan.FromSeconds(2), Ct);
+        (fixture.PoisonAttempts - attemptsBefore).ShouldBe(3);
+        (await QueueDepthAsync(RabbitMqTopology.StatusQueue)).ShouldBe(0u);
+        (await InboxCountAsync(messageId)).ShouldBe(0, "a failed consumer must roll back its transaction");
+    }
+
+    [Fact]
+    public async Task Invalid_data_for_a_known_type_goes_to_the_dlq_immediately()
+    {
+        var deadLettersBefore = await QueueDepthAsync(RabbitMqTopology.StatusDeadLetterQueue);
+        var attemptsBefore = fixture.PoisonAttempts;
+        var body = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            specversion = "1.0",
+            id = Guid.CreateVersion7(),
+            source = "fiapx/video-processor",
+            type = EventTypes.VideoProcessed,
+            time = DateTimeOffset.UtcNow,
+            data = new { videoId = "not-a-guid", frameCount = "three" },
+        });
+
+        await PublishAsync(EventTypes.VideoProcessed, body);
+
+        await Eventually.ReturnsAsync(
+            () => QueueDepthAsync(RabbitMqTopology.StatusDeadLetterQueue), depth => depth == deadLettersBefore + 1, TimeSpan.FromSeconds(15));
+        fixture.PoisonAttempts.ShouldBe(attemptsBefore, "the consumer is never called for invalid data");
     }
 
     private static byte[] ProcessedEvent(Guid messageId, Guid videoId) => JsonSerializer.SerializeToUtf8Bytes(new

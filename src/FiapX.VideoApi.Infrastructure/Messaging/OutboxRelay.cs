@@ -65,6 +65,12 @@ internal sealed partial class OutboxRelay(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!options.Value.Enabled)
+        {
+            LogDisabled();
+            return;
+        }
+
         var backoff = options.Value.PollInterval;
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -115,6 +121,9 @@ internal sealed partial class OutboxRelay(
         var doubled = current * 2;
         return doubled > options.Value.MaxBackoff ? options.Value.MaxBackoff : doubled;
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Outbox relay disabled (Outbox:Enabled=false)")]
+    private partial void LogDisabled();
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Outbox relay failed, retrying in {Delay}")]
     private partial void LogRelayFailed(Exception exception, TimeSpan delay);
